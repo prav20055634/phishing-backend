@@ -1,0 +1,9 @@
+torch
+scikit-learn
+pandas
+numpy
+flask
+flask-cors
+tldextract
+joblib
+gunicorn
