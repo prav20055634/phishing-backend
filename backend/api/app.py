@@ -8,92 +8,87 @@ CORS(app)
 def check_phishing_rules(url):
     url_lower = url.lower()
     phishing_indicators = 0
-    
-    phishing_keywords = ['verify', 'account', 'update', 'confirm', 
-                        'secure', 'banking', 'suspended', 'login', 
-                        'signin', 'credential']
-    for keyword in phishing_keywords:
+
+    # Suspicious keywords
+    keywords = ['verify', 'account', 'update', 'confirm', 'secure',
+                'banking', 'suspended', 'login', 'signin', 'credential',
+                'validate', 'authenticate', 'alert', 'urgent', 'expire',
+                'billing', 'password', 'recover', 'unlock', 'limited']
+    for keyword in keywords:
         if keyword in url_lower:
             phishing_indicators += 1
-    
-    if url_lower.count('-') >= 3:
+
+    # Hyphens and dots
+    if url_lower.count('-') >= 2:
         phishing_indicators += 2
     if url_lower.count('.') >= 4:
         phishing_indicators += 1
-    
-    phishing_patterns = ['paypal.com.', 'apple-id', 'bankofamerica-',
-                        'amazon-', 'microsoft-', 'netflix-', 
-                        'security-verify', '-verify.', 'account-verify']
+
+    # IP address
+    import re
+    if re.search(r'\d+\.\d+\.\d+\.\d+', url_lower):
+        phishing_indicators += 5
+
+    # Brand spoofing patterns
+    brands = ['paypal', 'apple', 'microsoft', 'amazon', 'google',
+              'netflix', 'facebook', 'instagram', 'twitter', 'linkedin',
+              'outlook', 'office365', 'office', 'onedrive', 'teams',
+              'bankofamerica', 'wellsfargo', 'chase', 'citibank', 'hdfc',
+              'icici', 'sbi', 'ebay', 'walmart', 'fedex', 'dhl', 'ups']
+
+    # Check brand + suspicious domain combination
+    for brand in brands:
+        if brand in url_lower:
+            # Safe: brand is the actual domain
+            safe_domains = [
+                f'{brand}.com', f'{brand}.net', f'{brand}.org',
+                f'www.{brand}.com', f'login.{brand}.com',
+                f'account.{brand}.com', f'mail.{brand}.com',
+                f'outlook.{brand}.com', f'office.{brand}.com'
+            ]
+            is_safe = any(url_lower.startswith(f'https://{d}') or
+                         url_lower.startswith(f'http://{d}') for d in safe_domains)
+            if not is_safe:
+                phishing_indicators += 4
+
+    # Microsoft specific patterns
+    microsoft_phishing = [
+        'microsoft-', '-microsoft', 'microsoft365', 'microsoftonline',
+        'ms-verify', 'outlook-verify', 'office-verify', 'teams-verify',
+        'office365-', '-office365', 'onedrive-', 'sharepoint-verify'
+    ]
+    for pattern in microsoft_phishing:
+        if pattern in url_lower:
+            phishing_indicators += 4
+
+    # Generic phishing patterns
+    phishing_patterns = [
+        'security-verify', 'account-verify', 'secure-login',
+        'verify-account', 'confirm-account', 'update-account',
+        'account-update', 'login-verify', 'signin-verify',
+        'account-suspended', 'account-locked', 'account-blocked',
+        'unusual-activity', 'suspicious-activity', '-alert-',
+        'free-gift', 'you-won', 'claim-prize', 'lucky-winner'
+    ]
     for pattern in phishing_patterns:
         if pattern in url_lower:
-            phishing_indicators += 3
-    
-    trusted_domains = ['paypal', 'apple', 'microsoft', 'amazon', 'google']
-    for domain in trusted_domains:
-        if re.search(f'{domain}\\.com\\.[a-z]+', url_lower):
-            phishing_indicators += 5
-    
+            phishing_indicators += 4
+
+    # Domain spoofing (brand.com.attacker.com)
+    for brand in brands:
+        if re.search(f'{brand}\\.com\\.[a-z]', url_lower):
+            phishing_indicators += 8
+
+    # Not HTTPS on sensitive page
     if not url_lower.startswith('https'):
-        if any(w in url_lower for w in ['login','verify','account']):
+        if any(w in url_lower for w in ['login', 'verify', 'account', 'banking', 'secure']):
             phishing_indicators += 2
-    
+
+    # Suspicious TLDs
+    suspicious_tlds = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz',
+                      '.top', '.click', '.link', '.online', '.site']
+    for tld in suspicious_tlds:
+        if url_lower.endswith(tld) or (tld + '/') in url_lower:
+            phishing_indicators += 3
+
     return phishing_indicators >= 4
-
-@app.route('/health')
-def health():
-    return jsonify({'status': 'ok', 'models_ready': True})
-
-@app.route('/detect/url', methods=['POST'])
-def detect_url():
-    url = request.json.get('url')
-    if not url:
-        return jsonify({'error': 'URL required'}), 400
-    is_phishing = check_phishing_rules(url)
-    return jsonify({
-        'url': url,
-        'is_phishing': is_phishing,
-        'confidence': 0.95 if is_phishing else 0.90,
-        'phishing_probability': 0.95 if is_phishing else 0.05,
-        'zero_day_risk': False,
-        'anomaly_score': 0.0
-    })
-
-@app.route('/detect/batch', methods=['POST'])
-def detect_batch():
-    urls = request.json.get('urls', [])
-    results = []
-    for url in urls:
-        is_phishing = check_phishing_rules(url)
-        results.append({
-            'url': url,
-            'is_phishing': is_phishing,
-            'confidence': 0.95 if is_phishing else 0.90
-        })
-    return jsonify({'results': results, 'total': len(results)})
-
-@app.route('/analyze/sms', methods=['POST'])
-def analyze_sms():
-    text = request.json.get('text', '')
-    urls = re.findall(r'https?://[^\s]+|www\.[^\s]+', text)
-    urls = ['http://'+u if not u.startswith('http') else u for u in urls]
-    keywords = ['urgent','verify','account','suspended','login',
-                'confirm','security','update','unusual','blocked']
-    keyword_hits = sum(1 for w in keywords if w in text.lower())
-    phishing_count = sum(1 for u in urls if check_phishing_rules(u))
-    risk = 'LOW'
-    if phishing_count > 0 or keyword_hits >= 3:
-        risk = 'HIGH'
-    elif keyword_hits >= 1 or len(urls) > 0:
-        risk = 'MEDIUM'
-    return jsonify({
-        'risk_level': risk,
-        'keyword_hits': keyword_hits,
-        'urls_found': len(urls),
-        'phishing_urls': phishing_count,
-        'recommendation': 'BLOCK' if risk=='HIGH' else 'CAUTION' if risk=='MEDIUM' else 'SAFE'
-    })
-
-if __name__ == '__main__':
-    import os
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
