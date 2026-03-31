@@ -443,7 +443,5 @@ def test_detection():
     correct = sum(1 for r in results if r['status'] == 'CORRECT')
     return jsonify({'accuracy': f'{correct}/{len(results)}', 'results': results})
 
-if __name__ == '__main__':
-    import os
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=7860)
