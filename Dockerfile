@@ -13,4 +13,4 @@ COPY --chown=user . .
 
 EXPOSE 7860
 
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:7860", "--timeout", "120", "backend.app:app"]
+CMD ["sh", "-c", "cd backend && gunicorn -w 2 -b 0.0.0.0:7860 --timeout 120 app:app"]
